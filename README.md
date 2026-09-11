@@ -7,6 +7,6 @@
   <img width="2010" height="1085" alt="image" src="https://github.com/user-attachments/assets/8178ac2c-19d1-4268-a59e-6e736091e101" />
 
 2.WiFI Packet 정리  
-
+  순수 조종 명령 패킷은 88 bytes로 구성됨
   <img width="657" height="873" alt="image" src="https://github.com/user-attachments/assets/8507ca05-1c9b-492f-9098-bc5c50af3253" />
 
