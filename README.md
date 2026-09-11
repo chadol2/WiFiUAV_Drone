@@ -8,6 +8,9 @@
 
 **2.WiFI Packet 정리**    
 
+  <img width="676" height="326" alt="image" src="https://github.com/user-attachments/assets/7e65ff35-98a6-4489-a3ff-c274fcfc5165" />
+
+
   순수 조종 명령 패킷은 88 bytes로 구성됨(esp32c3 코드에서 아래 패킷만 드론으로 전송하면 됨)
   <img width="657" height="873" alt="image" src="https://github.com/user-attachments/assets/8507ca05-1c9b-492f-9098-bc5c50af3253" />
     
