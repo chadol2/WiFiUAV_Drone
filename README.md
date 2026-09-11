@@ -3,8 +3,11 @@
   - joystick_3d : 드론 조종기의 케이스 제작을 위한 step 파일 및 stl 파일 제공  
   - v888_joystick : esp32c3 를 이용하여 v888 드론 조종하는 조종기의 소스 코드 제공 (esp-idf ide 를 사용함)  
   - v888_python : PC에서 드론을 wifi 연결 후 테스트할 수 있는 기본 코드 제공
+    
                   exmaples폴더-> v888_flight_and_video_test.py : 드론의 전방 카메라로 사진 저장,이륙 후 전진 후진 죄회전 우이동 좌이동 착륙의 기본 명령 실행하는 코드
+    
                   exmaples폴더-> v888_drone_viewer.py : 드론의 전방 카메라와 하방 카메라의 전환,사진 저장 및 영상 녹화하는 코드
+    
                   exmaples폴더-> v888_handshake_arm_test.py : 드론의 arming, disarming 테스트 코드    
     
  
