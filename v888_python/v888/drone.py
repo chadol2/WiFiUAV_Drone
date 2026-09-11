@@ -63,13 +63,73 @@ SOI/DQT/SOF0/SOS header successfully decoded real frames (640x360).
 
 from __future__ import annotations
 
+import platform
 import socket
+import subprocess
 import threading
 import time
 from typing import Optional
 
 from . import protocol as proto
 from .video import VideoReceiver, VideoFrame
+
+
+def get_connected_ssid() -> Optional[str]:
+    """
+    Best-effort read of the SSID of the Wi-Fi network this computer is
+    CURRENTLY associated with, via OS-specific commands. Returns None if
+    it can't be determined (not on Wi-Fi, unsupported OS, command not
+    found, permissions issue, etc.) -- callers should treat None as
+    "unknown", not as "not connected".
+
+    This is a much stronger check than is_network_reachable()/IP-route
+    probing: a computer can have a valid route to 192.168.169.1 (e.g.
+    via a default gateway on a totally different Wi-Fi network) and
+    still not actually be on the drone's AP at all. Checking the SSID
+    catches that false-positive case; IP reachability alone does not.
+    """
+    system = platform.system()
+    try:
+        if system == "Windows":
+            out = subprocess.check_output(
+                ["netsh", "wlan", "show", "interfaces"],
+                encoding="utf-8", errors="ignore", timeout=3,
+            )
+            for line in out.splitlines():
+                line = line.strip()
+                # Match "SSID" but not "BSSID" (netsh prints both).
+                if line.startswith("SSID") and not line.startswith("BSSID"):
+                    return line.split(":", 1)[1].strip() or None
+        elif system == "Darwin":
+            airport = (
+                "/System/Library/PrivateFrameworks/Apple80211.framework"
+                "/Versions/Current/Resources/airport"
+            )
+            try:
+                out = subprocess.check_output(
+                    [airport, "-I"], encoding="utf-8", errors="ignore", timeout=3,
+                )
+                for line in out.splitlines():
+                    line = line.strip()
+                    if line.startswith("SSID:"):
+                        return line.split(":", 1)[1].strip() or None
+            except (OSError, subprocess.SubprocessError):
+                # `airport` was removed in newer macOS versions; fall back.
+                out = subprocess.check_output(
+                    ["networksetup", "-getairportnetwork", "en0"],
+                    encoding="utf-8", errors="ignore", timeout=3,
+                )
+                if ":" in out:
+                    return out.split(":", 1)[1].strip() or None
+        elif system == "Linux":
+            out = subprocess.check_output(
+                ["iwgetid", "-r"], encoding="utf-8", errors="ignore", timeout=3,
+            )
+            ssid = out.strip()
+            return ssid or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return None
 
 
 class V888Error(RuntimeError):
@@ -158,6 +218,10 @@ class V888:
         self._stop_event = threading.Event()
         self._is_connected = False
         self._send_failure_warned = False
+        self._last_send_warning_time = 0.0
+        # 0.0 sentinel means "never sent successfully yet" -- seconds_since_
+        # last_successful_send() treats that as +inf, not "0 seconds ago".
+        self._last_successful_send_time = 0.0
         self._sending_paused = False
         self._video: Optional[VideoReceiver] = None
 
@@ -167,6 +231,8 @@ class V888:
     def connect(
         self,
         check_network: bool = True,
+        require_network: bool = False,
+        require_ssid_prefix: Optional[str] = None,
         start_sending: bool = True,
         skip_handshake: bool = False,
     ) -> None:
@@ -180,11 +246,33 @@ class V888:
 
         If `check_network` is True (default), this does a best-effort
         check that `drone_ip` is actually reachable from this computer's
-        current network before opening the control socket, and prints a
-        warning (it does not raise) if it looks unreachable. This cannot
-        guarantee the drone itself is listening -- the protocol has no
-        handshake ACK -- but it catches the common case of "not connected
-        to the drone's Wi-Fi at all".
+        current network before opening the control socket.
+
+          - If `require_network` is False (default), an unreachable
+            result only PRINTS A WARNING and continues -- this is the
+            original, lenient behavior, useful if this check is wrong
+            for your setup (e.g. an unusual routing setup).
+          - If `require_network` is True, an unreachable result instead
+            RAISES V888Error and connect() does not proceed -- no socket
+            is opened, no handshake is sent, and no control command can
+            follow.
+
+        `require_ssid_prefix` (e.g. "FLOW_") adds a SECOND, STRONGER
+        check on top of the IP-route probe above: it reads the actual
+        SSID this computer's Wi-Fi is currently associated with (via
+        `get_connected_ssid()`) and requires it to start with this
+        prefix, raising V888Error if it doesn't match (or can't be
+        read). This catches a real false-positive the plain IP-route
+        check misses: a computer can have a valid route to
+        192.168.169.1 via a default gateway on a COMPLETELY DIFFERENT
+        Wi-Fi network and still pass the IP check -- SSID checking
+        catches that. Leave this None (default) to skip the SSID check
+        (e.g. on a platform get_connected_ssid() doesn't support, or if
+        your drone's SSID doesn't follow the usual FLOW_ naming).
+
+        Neither check can guarantee the drone itself is listening -- the
+        protocol has no handshake ACK -- these only catch "not on the
+        drone's Wi-Fi at all", which is the common failure mode.
 
         If `start_sending` is False, the socket is opened, the handshake
         is still performed, and the background thread is started, but it
@@ -232,6 +320,15 @@ class V888:
             return
 
         if check_network and not self._is_network_reachable():
+            if require_network:
+                raise V888Error(
+                    f"Could not reach {self.drone_ip} on this computer's "
+                    f"current network -- refusing to connect(). Check that "
+                    f"you're connected to the drone's Wi-Fi access point "
+                    f"(SSID usually starts with 'FLOW_'), then try again. "
+                    f"(Pass require_network=False to downgrade this to a "
+                    f"warning instead.)"
+                )
             print(
                 f"[v888] WARNING: could not reach {self.drone_ip} on this "
                 f"computer's current network. Check that you're connected "
@@ -239,6 +336,25 @@ class V888:
                 f"with 'FLOW_') before sending commands. Continuing anyway "
                 f"in case this check is wrong for your setup."
             )
+
+        if require_ssid_prefix is not None:
+            current_ssid = get_connected_ssid()
+            if current_ssid is None:
+                raise V888Error(
+                    f"require_ssid_prefix='{require_ssid_prefix}' was given, "
+                    f"but this computer's current Wi-Fi SSID could not be "
+                    f"determined (unsupported OS, no Wi-Fi adapter, missing "
+                    f"command, or a permissions issue). Pass "
+                    f"require_ssid_prefix=None to skip this check."
+                )
+            if not current_ssid.startswith(require_ssid_prefix):
+                raise V888Error(
+                    f"Connected to Wi-Fi '{current_ssid}', which does not "
+                    f"start with '{require_ssid_prefix}' -- this doesn't "
+                    f"look like the drone's access point. Connect to the "
+                    f"drone's Wi-Fi (SSID usually starts with 'FLOW_') "
+                    f"before calling connect()."
+                )
 
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         # A short receive timeout lets the video receiver thread (which
@@ -291,6 +407,23 @@ class V888:
         # reliably when the caller added an extra ~1s sleep first. Baking in
         # more margin here by default rather than relying on every caller to
         # remember their own delay.)
+
+    def is_network_reachable(self) -> bool:
+        """
+        Public wrapper around the network-reachability probe used
+        internally by connect(). Lets callers check "is this computer
+        even on the drone's Wi-Fi?" BEFORE calling connect() or issuing
+        any control command -- useful for a fail-fast guard at the top
+        of a flight script, so a control command is never sent while
+        not actually connected to the drone's network.
+
+        Same caveat as the internal check: this only confirms a route
+        to `drone_ip` exists on this computer's network. It cannot
+        confirm the drone itself is listening (the protocol has no
+        handshake ACK), so a True result is necessary but not
+        sufficient for "the drone will respond".
+        """
+        return self._is_network_reachable()
 
     def _is_network_reachable(self) -> bool:
         """
@@ -471,17 +604,76 @@ class V888:
         try:
             self._sock.sendto(packet, (self.drone_ip, self.control_port))
             self._send_failure_warned = False
+            self._last_successful_send_time = time.time()
         except OSError as exc:
-            # Don't spam the console at send_rate_hz; warn once until a
-            # send succeeds again.
-            if not getattr(self, "_send_failure_warned", False):
+            # Don't spam the console at send_rate_hz -- warn immediately on
+            # the first failure, then at most once every 2s while it's
+            # still failing (not just once ever), so a long outage stays
+            # visible instead of going quiet after the first line.
+            now = time.time()
+            if not self._send_failure_warned or (now - self._last_send_warning_time) >= 2.0:
+                # Best-effort: report which SSID this computer is CURRENTLY
+                # on when the failure happens. A real-world case this
+                # caught: Windows silently roaming away from the drone's
+                # AP mid-flight to a different known Wi-Fi network with
+                # internet access (the drone's AP has none, which Windows'
+                # own connectivity heuristics can deprioritize). Seeing
+                # "now on: <other network>" in the log is a direct
+                # confirmation of that, versus e.g. a real signal dropout
+                # where the SSID would still read as the drone's AP.
+                current_ssid = get_connected_ssid()
+                ssid_note = (
+                    f", currently associated with Wi-Fi: '{current_ssid}'"
+                    if current_ssid is not None
+                    else ""
+                )
                 print(
                     f"[v888] WARNING: failed to send control packet to "
                     f"{self.drone_ip}:{self.control_port} ({exc}). Check "
                     f"your Wi-Fi connection to the drone's access point. "
-                    f"Will keep retrying silently."
+                    f"Will keep retrying silently. "
+                    f"({self.seconds_since_last_successful_send():.1f}s since "
+                    f"last successful send{ssid_note})"
                 )
                 self._send_failure_warned = True
+                self._last_send_warning_time = now
+
+    def seconds_since_last_successful_send(self) -> float:
+        """
+        How long it's been since a control packet was last actually
+        handed off to the OS successfully (not since it was last
+        *attempted* -- attempts happen at send_rate_hz regardless).
+
+        Returns float('inf') if no packet has ever been sent
+        successfully yet (e.g. called right after connect(), before the
+        first send has had a chance to succeed).
+
+        Use this from your own script's main thread to notice a link
+        outage the background sender only logs to the console -- e.g.
+        pause a scripted maneuver sequence, or bail out to land()/
+        emergency_stop() attempts, if this grows too large mid-flight.
+        Note: if the link is actually down, those recovery calls may
+        also fail to send for the same reason: there is no way to
+        command the drone at all while the OS can't route to it. This
+        is meant for detecting and surfacing the outage promptly, not
+        for guaranteeing a way out of it.
+        """
+        if self._last_successful_send_time == 0.0:
+            return float("inf")
+        return time.time() - self._last_successful_send_time
+
+    def is_link_healthy(self, max_silence: float = 1.0) -> bool:
+        """
+        True if a control packet was successfully sent within the last
+        `max_silence` seconds. At the default 50Hz send rate that's
+        normally ~50 successful sends; a False result here means
+        sending has actually been failing (OS-level send errors, e.g.
+        Wi-Fi association lost), not just that the drone hasn't
+        acknowledged anything (this protocol has no ACK for RC packets
+        at all, success here only means the OS accepted the packet for
+        transmission).
+        """
+        return self.seconds_since_last_successful_send() <= max_silence
 
     def _require_connected(self) -> None:
         if not self._is_connected:
