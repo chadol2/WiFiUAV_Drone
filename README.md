@@ -20,5 +20,5 @@
  - esp32c3_joystick_pinmap.png : esp32c3에서 사용하는 pinmap 과 18650 밧데리 전원 사용시의 전원 연결도를 참고할 수 있음
   <img width="2010" height="1085" alt="image" src="https://github.com/user-attachments/assets/8178ac2c-19d1-4268-a59e-6e736091e101" />
 - joystick controller 내부 사진
-- https://github.com/chadol2/WiFiUAV_Drone/blob/main/esp32c3_joystick.jpg
+ <img width="2010" height="1085" alt="image" src="https://github.com/chadol2/WiFiUAV_Drone/blob/main/esp32c3_joystick.jpg" /> 
 
