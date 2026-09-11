@@ -11,10 +11,10 @@
   <img width="676" height="326" alt="image" src="https://github.com/user-attachments/assets/7e65ff35-98a6-4489-a3ff-c274fcfc5165" />
 
 
-  순수 조종 명령 패킷은 88 bytes로 구성됨(esp32c3 코드에서 아래 패킷만 드론으로 전송하면 됨)
+  - 순수 조종 명령 패킷은 88 bytes로 구성됨(esp32c3 코드에서 아래 패킷만 드론으로 전송하면 됨)
   <img width="657" height="873" alt="image" src="https://github.com/user-attachments/assets/8507ca05-1c9b-492f-9098-bc5c50af3253" />
     
-  영상 수신을 지속적으로 하기 위해서는 PC의 파이썬 코드 상에서 위 조종 명령과 함께 아래 값들을 드론으로 지속적으로 전송해야 함  
+  - 영상 수신을 위해서는 PC의 파이썬 코드 상에서 위 조종 명령과 함께 아래 값들을 드론으로 지속적으로 전송해야 함  
   
   <img width="654" height="495" alt="image" src="https://github.com/user-attachments/assets/49aee410-b080-4e33-aed4-32c4e8c7b88e" />
 
