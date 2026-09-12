@@ -32,4 +32,9 @@
  - joystick controller 사진
   <img width="624" height="587" alt="image" src="https://github.com/user-attachments/assets/2667594f-4d58-4171-b274-9c3c43ed8fe5" />
 
+ - esp32c3 f/w 전체 블럭도
+   <img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/0f47e49e-7994-4819-ac44-237f7c596ccb" />
+
+  
+
 
