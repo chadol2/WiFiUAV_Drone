@@ -27,7 +27,7 @@
 **3.JoyStick Controller**   
 
  - esp32c3_joystick_pinmap.png : esp32c3에서 사용하는 pinmap 과 18650 밧데리 전원 사용시의 전원 연결도를 참고할 수 있음
-  <img width="2010" height="1085" alt="image" src="https://github.com/user-attachments/assets/8178ac2c-19d1-4268-a59e-6e736091e101" />
+  <img width="654" height="495" alt="image" src="https://github.com/user-attachments/assets/8178ac2c-19d1-4268-a59e-6e736091e101" />
 
  - joystick controller 사진
   <img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/2667594f-4d58-4171-b274-9c3c43ed8fe5" />
